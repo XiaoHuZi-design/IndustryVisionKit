@@ -59,6 +59,9 @@ IndustryVisionKit/
 │   ├── models/                     # ONNX 模型文件
 │   ├── images/                     # 测试图片
 │   └── classes/                    # 类别标签文件
+├── bin/                            # 编译产物（已排除上传）
+│   ├── IndustryVisionKit           # 最终可执行文件
+│   └── libIndustryVisionLib.a      # 算法层静态库（中间产物）
 ├── doc/
 │   └── coding_rules.md
 └── README.md
