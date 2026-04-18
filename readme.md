@@ -284,8 +284,7 @@ IndustryVisionKit.exe
 
 ## 后续扩展
 
-- [x] ~~多推理后端支持（OpenCV DNN / ONNX Runtime / LibTorch）~~
-- [ ] OpenVINO 后端（已预留，需安装 OpenVINO SDK）
+- [x] ~~多推理后端支持（OpenCV DNN / ONNX Runtime / OpenVINO / LibTorch）~~
 - [ ] TensorRT 加速推理
 - [ ] 实例分割模型支持（YOLOv8-seg 等）
 - [ ] 多模型并发切换
