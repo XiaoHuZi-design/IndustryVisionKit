@@ -2,6 +2,12 @@
 
 基于 **C++17 / Qt6 / CMake / ONNX Runtime** 的工业视觉检测桌面应用，支持 YOLOv5、YOLOv8、YOLO11、YOLO26 等多版本目标检测模型，提供图片、视频、摄像头三种输入模式。
 
+## 截图预览
+
+| 登录页 | 检测主页 |
+|:---:|:---:|
+| ![登录页](Login.png) | ![检测主页](GUI.png) |
+
 ## 功能特性
 
 - 多版本 YOLO 模型推理（YOLOv5 / v8 / v11 / v26）
@@ -127,14 +133,35 @@ mkdir -p resource/classes
 | yolo11n.onnx | YOLO11 官方 | coco.names.txt |
 | yolo26n.onnx | YOLO26 官方 | coco.names.txt |
 
-可用 Python 一键导出 ONNX：
+可用 Python + venv 一键导出 ONNX（推荐使用 uv 管理隔离环境，避免污染系统 Python）：
 
 ```bash
-pip install ultralytics onnx onnxslim
+# 安装 uv（Python 包管理器）
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
+# 在项目根目录创建虚拟环境（指定 Python 3.12，避免 3.14 兼容问题）
+uv venv .convert_venv --python 3.12
+
+# 激活虚拟环境
+source .convert_venv/bin/activate
+
+# 安装依赖
+uv pip install ultralytics onnx onnxslim
+
+# 导出 ONNX 模型（.pt 文件会自动从 Ultralytics 下载）
+yolo export model=yolov5s.pt format=onnx
 yolo export model=yolov8n.pt format=onnx
 yolo export model=yolo11n.pt format=onnx
+yolo export model=yolo26n.pt format=onnx
+
+# 导出的 .onnx 文件移动到 resource/models/
+mv *.onnx resource/models/
+
+# 退出虚拟环境（环境保留在 .convert_venv/，下次可直接激活复用）
+deactivate
 ```
+
+> **提示**：`.convert_venv/` 已在 `.gitignore` 中排除，不会提交到仓库。后续如需转换新模型，只需 `source .convert_venv/bin/activate` 即可复用。
 
 默认类别文件 `coco.names.txt`（80 类 COCO 数据集）已包含在 `resource/classes/` 中。自定义模型请创建对应的 `.txt` 类别文件。
 
