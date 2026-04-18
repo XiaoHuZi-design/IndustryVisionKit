@@ -24,6 +24,7 @@ struct DetectionConfig {
     QString modelPath;
     QString classFilePath;
     QString modelVersion;
+    QString backendName;  // "ONNX Runtime" / "OpenVINO" / "LibTorch"，空则自动选择
     double confidenceThreshold = 0.25;
     double iouThreshold = 0.45;
 };

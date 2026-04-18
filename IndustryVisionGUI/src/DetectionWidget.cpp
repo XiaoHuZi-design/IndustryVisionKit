@@ -52,7 +52,23 @@ QString projectResourcePath(const QString& relativePath) {
     return QString();
 }
 
-QString defaultModelForVersion(const QString& version) {
+QString defaultModelForVersion(const QString& version, const QString& backend) {
+    // LibTorch 后端使用 .torchscript 格式
+    if (backend == QStringLiteral("LibTorch")) {
+        static const QHash<QString, QString> torchscriptDefaults = {
+            {QStringLiteral("YOLOv5"), QStringLiteral("resource/models/yolov5su.torchscript")},
+            {QStringLiteral("YOLOv8"), QStringLiteral("resource/models/yolov8n.torchscript")},
+            {QStringLiteral("YOLOv11"), QStringLiteral("resource/models/yolo11n.torchscript")},
+            {QStringLiteral("YOLOv26"), QStringLiteral("resource/models/yolo26n.torchscript")},
+        };
+        const QString relPath = torchscriptDefaults.value(version, QString());
+        if (!relPath.isEmpty()) {
+            const QString absPath = projectResourcePath(relPath);
+            if (!absPath.isEmpty()) return absPath;
+        }
+    }
+
+    // OpenCV DNN / ONNX Runtime / OpenVINO 使用 .onnx 格式
     static const QHash<QString, QString> defaults = {
         {QStringLiteral("YOLOv5"), QStringLiteral("resource/models/yolov5s.onnx")},
         {QStringLiteral("YOLOv8"), QStringLiteral("resource/models/yolov8n.onnx")},
@@ -73,7 +89,7 @@ DetectionWidget::DetectionWidget(QWidget* parent)
 
     m_versionCombo->addItems(m_engine.supportedVersions());
     m_config.modelVersion = m_versionCombo->currentText();
-    m_modelPathEdit->setText(defaultModelForVersion(m_versionCombo->currentText()));
+    m_modelPathEdit->setText(defaultModelForVersion(m_versionCombo->currentText(), m_backendCombo->currentText()));
     m_currentSourcePath = projectResourcePath(QStringLiteral("resource/images/bus.jpg"));
     if (!m_currentSourcePath.isEmpty()) {
         m_currentSourceValue->setText(QFileInfo(m_currentSourcePath).fileName());
@@ -99,7 +115,7 @@ void DetectionWidget::browseModel() {
         this,
         QStringLiteral("选择模型文件"),
         QString(),
-        QStringLiteral("Model Files (*.pt *.onnx *.engine *.bin);;All Files (*)"));
+        QStringLiteral("Model Files (*.pt *.onnx *.torchscript *.engine *.bin);;All Files (*)"));
 
     if (!path.isEmpty()) {
         m_modelPathEdit->setText(path);
@@ -111,6 +127,7 @@ void DetectionWidget::loadModel() {
     m_config.modelPath = m_modelPathEdit->text().trimmed();
     m_config.classFilePath = m_classFileEdit->text().trimmed();
     m_config.modelVersion = m_versionCombo->currentText();
+    m_config.backendName = m_backendCombo->currentText();
     m_config.confidenceThreshold = m_confidenceSpin->value();
     m_config.iouThreshold = m_iouSpin->value();
 
@@ -426,6 +443,16 @@ void DetectionWidget::buildUi() {
     auto* versionLabel = new QLabel(QStringLiteral("YOLO 版本:"), modelGroup);
     versionLabel->setObjectName(QStringLiteral("fieldLabel"));
 
+    auto* backendLabel = new QLabel(QStringLiteral("推理后端:"), modelGroup);
+    backendLabel->setObjectName(QStringLiteral("fieldLabel"));
+    m_backendCombo = new QComboBox(modelGroup);
+    for (const auto& name : m_engine.availableBackends()) {
+        m_backendCombo->addItem(name);
+    }
+    if (m_backendCombo->count() == 0) {
+        m_backendCombo->addItem(QStringLiteral("模拟模式"));
+    }
+
     m_modelPathEdit = new QLineEdit(modelGroup);
     m_modelPathEdit->setPlaceholderText(QStringLiteral("选择模型文件路径..."));
     auto* browseButton = new QPushButton(QStringLiteral("浏览"), modelGroup);
@@ -453,6 +480,8 @@ void DetectionWidget::buildUi() {
 
     modelLayout->addWidget(versionLabel);
     modelLayout->addWidget(m_versionCombo);
+    modelLayout->addWidget(backendLabel);
+    modelLayout->addWidget(m_backendCombo);
     modelLayout->addLayout(modelRow);
     modelLayout->addWidget(classLabel);
     modelLayout->addLayout(classRow);
@@ -704,11 +733,22 @@ void DetectionWidget::buildUi() {
     connect(m_classFileEdit, &QLineEdit::editingFinished, this, &DetectionWidget::loadModel);
     // 版本切换自动加载
     connect(m_versionCombo, &QComboBox::currentTextChanged, this, [this](const QString& version) {
-        const QString defaultModel = defaultModelForVersion(version);
+        const QString defaultModel = defaultModelForVersion(version, m_backendCombo->currentText());
         if (!defaultModel.isEmpty()) {
             m_modelPathEdit->setText(defaultModel);
             m_classFileEdit->clear();
             appendLog(QStringLiteral("切换至 %1，默认模型：%2").arg(version, QFileInfo(defaultModel).fileName()));
+        }
+        loadModel();
+    });
+    // 切换后端自动切换默认模型并 reload
+    connect(m_backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        const QString backend = m_backendCombo->currentText();
+        appendLog(QStringLiteral("切换推理后端：%1").arg(backend));
+        // 根据后端类型更新默认模型路径
+        const QString defaultModel = defaultModelForVersion(m_versionCombo->currentText(), backend);
+        if (!defaultModel.isEmpty()) {
+            m_modelPathEdit->setText(defaultModel);
         }
         loadModel();
     });

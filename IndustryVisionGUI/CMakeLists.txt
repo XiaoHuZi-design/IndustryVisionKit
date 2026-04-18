@@ -24,3 +24,13 @@ target_link_libraries(IndustryVisionKit
         IndustryVisionLib
         opencv_core opencv_imgproc opencv_imgcodecs opencv_video opencv_videoio opencv_highgui
 )
+
+# 设置运行时库搜索路径（各后端动态库）
+set(EXTRA_RPATHS
+    "${CMAKE_SOURCE_DIR}/libtorch/lib"
+    "${CMAKE_SOURCE_DIR}/openvino_runtime/runtime/lib/arm64/Release"
+)
+set_target_properties(IndustryVisionKit PROPERTIES
+    BUILD_RPATH "${EXTRA_RPATHS}"
+    INSTALL_RPATH "@executable_path/../libtorch/lib;@executable_path/../openvino_runtime/runtime/lib/arm64/Release"
+)

@@ -1,6 +1,6 @@
 # IndustryVisionKit
 
-基于 **C++17 / Qt6 / CMake / ONNX Runtime** 的工业视觉检测桌面应用，支持 YOLOv5、YOLOv8、YOLO11、YOLO26 等多版本目标检测模型，提供图片、视频、摄像头三种输入模式。
+基于 **C++17 / Qt6 / CMake** 的工业视觉检测桌面应用，支持 YOLOv5、YOLOv8、YOLO11、YOLO26 等多版本目标检测模型，提供**四种推理后端**（OpenCV DNN / ONNX Runtime / OpenVINO / LibTorch）运行时切换，支持图片、视频、摄像头三种输入模式。
 
 ## 截图预览
 
@@ -11,6 +11,7 @@
 ## 功能特性
 
 - 多版本 YOLO 模型推理（YOLOv5 / v8 / v11 / v26）
+- **四种推理后端运行时切换**：OpenCV DNN、ONNX Runtime、OpenVINO、LibTorch
 - 图片 / 视频 / 摄像头（含多设备选择、热插拔刷新）三种检测模式
 - 实时视频流检测与标注
 - 置信度、IOU 阈值实时调节
@@ -26,28 +27,64 @@
 | 语言 | C++17 |
 | GUI 框架 | Qt6 Widgets（纯代码构建，不使用 .ui） |
 | 构建系统 | CMake 3.21+ |
-| 推理引擎 | ONNX Runtime 1.24+ |
+| 推理引擎 | OpenCV DNN（默认）/ ONNX Runtime / OpenVINO / LibTorch（可编译期选择） |
 | 图像处理 | OpenCV 4.x |
-| 模型格式 | ONNX (.onnx) |
+| 模型格式 | ONNX (.onnx) / TorchScript (.torchscript) |
+
+## 推理后端架构
+
+项目采用**策略模式 + 独立编译单元**的多后端架构，每个后端一个 .cpp 文件，通过 CMake option 独立开关：
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │            YoloEngine（调度器）            │
+                    │  preprocessImage() → 统一 letterbox+NCHW  │
+                    └────────────────┬────────────────────────┘
+                                     │ std::unique_ptr<InferenceBackend>
+                    ┌────────────────┼────────────────────────┐
+                    │                │                        │
+              BackendOpenCV   BackendOnnxRuntime       BackendLibTorch
+              cv::dnn::Net     Ort::Session           torch::jit::Module
+              (默认，零依赖)    (需下载 SDK)            (需下载 SDK)
+                    │                │                        │
+                    └────────────────┼────────────────────────┘
+                                     │
+                              parseYoloOutput() → 统一后处理 + NMS
+                                     │
+                            QList<DetectionResult>
+```
+
+| 后端 | 文件 | 依赖 | 模型格式 | CMake 开关 |
+|------|------|------|---------|-----------|
+| **OpenCV DNN** | `BackendOpenCV.cpp` | OpenCV（已包含） | .onnx | 默认启用 |
+| **ONNX Runtime** | `BackendOnnxRuntime.cpp` | onnxruntime SDK | .onnx | `INDUSTRYVISION_ENABLE_ONNXRUNTIME` |
+| **OpenVINO** | `BackendOpenVINO.cpp` | OpenVINO SDK | .onnx | `INDUSTRYVISION_ENABLE_OPENVINO` |
+| **LibTorch** | `BackendLibTorch.cpp` | LibTorch SDK | .torchscript | `INDUSTRYVISION_ENABLE_LIBTORCH` |
+
+所有后端共享预处理（letterbox + NCHW + 归一化）和后处理（YOLO 格式解析 + NMS），仅推理调用分后端。
 
 ## 项目结构
 
 ```
 IndustryVisionKit/
-├── CMakeLists.txt                  # 根 CMake 配置
+├── CMakeLists.txt                  # 根 CMake 配置（后端开关）
 ├── IndustryVisionLib/              # 算法层
-│   ├── CMakeLists.txt
+│   ├── CMakeLists.txt              # 后端条件编译 + 链接
 │   ├── include/IndustryVisionLib/
 │   │   ├── DetectionTypes.h        # 检测数据结构与配置
-│   │   ├── UserManager.h           # 用户管理（注册/登录/持久化）
-│   │   └── YoloEngine.h            # YOLO 推理引擎封装
+│   │   ├── InferenceBackend.h      # 推理后端抽象接口
+│   │   ├── UserManager.h           # 用户管理
+│   │   └── YoloEngine.h            # YOLO 引擎（调度器）
 │   └── src/
+│       ├── BackendOpenCV.cpp       # OpenCV DNN 后端
+│       ├── BackendOnnxRuntime.cpp  # ONNX Runtime 后端
+│       ├── BackendOpenVINO.cpp     # OpenVINO 后端
+│       ├── BackendLibTorch.cpp     # LibTorch 后端
 │       ├── UserManager.cpp
-│       └── YoloEngine.cpp
+│       └── YoloEngine.cpp          # 共享预处理/后处理 + 后端调度
 ├── IndustryVisionGUI/              # 界面层
-│   ├── CMakeLists.txt
 │   ├── include/IndustryVisionGUI/
-│   │   ├── ApplicationWindow.h     # 主窗口（页面切换）
+│   │   ├── ApplicationWindow.h     # 主窗口
 │   │   ├── LoginWidget.h           # 登录/注册页
 │   │   └── DetectionWidget.h       # 检测主页
 │   └── src/
@@ -55,35 +92,15 @@ IndustryVisionKit/
 │       ├── ApplicationWindow.cpp
 │       ├── LoginWidget.cpp
 │       └── DetectionWidget.cpp
-├── resource/                       # 资源文件（需自行准备，见下方说明）
-│   ├── models/                     # ONNX 模型文件
+├── resource/                       # 资源文件
+│   ├── models/                     # 模型文件
 │   ├── images/                     # 测试图片
 │   └── classes/                    # 类别标签文件
-├── bin/                            # 编译产物（已排除上传）
+├── bin/                            # 编译产物
 │   ├── IndustryVisionKit           # 最终可执行文件
 │   └── libIndustryVisionLib.a      # 算法层静态库（中间产物）
-├── doc/
-│   └── coding_rules.md
-└── README.md
+└── doc/
 ```
-
-## 编译架构
-
-项目采用**分层静态链接**架构，通过根 `CMakeLists.txt` 的 `add_subdirectory` 按依赖顺序一次性编译：
-
-```
-IndustryVisionLib/  ──(编译)──▶  libIndustryVisionLib.a  (静态库)
-                                          │
-                                          │ 静态链接
-                                          ▼
-IndustryVisionGUI/  ──(编译)──▶  IndustryVisionKit  (可执行文件)
-                                   + Qt6 / OpenCV / ONNX Runtime
-```
-
-- **`libIndustryVisionLib.a`** — 算法层静态库，包含 YOLO 推理引擎、用户管理等核心逻辑
-- **`IndustryVisionKit`** — 最终可执行文件，GUI 层编译时将静态库整体链入，运行时只需这一个文件
-
-编译顺序由 CMake 自动管理：先编译 Lib 产出 `.a`，再编译 GUI 链接它并生成最终可执行文件，一条 `cmake --build` 即可完成全部构建。
 
 ## 环境依赖
 
@@ -93,16 +110,17 @@ IndustryVisionGUI/  ──(编译)──▶  IndustryVisionKit  (可执行文件
 |------|---------|------|
 | CMake | 3.21+ | 构建系统 |
 | Qt | 6.0+ | 需包含 Core、Gui、Widgets 模块 |
-| OpenCV | 4.0+ | 需包含 core、imgproc、imgcodecs、video、videoio、highgui |
-| ONNX Runtime | 1.17+ | YOLO 模型推理引擎 |
+| OpenCV | 4.0+ | 需包含 core、imgproc、imgcodecs、video、videoio、highgui、dnn |
 | C++ 编译器 | C++17 支持 | macOS Clang 15+ / GCC 9+ / MSVC 2019+ |
 
-### 可选
+### 可选推理后端
 
 | 依赖 | 说明 |
 |------|------|
-| LibTorch | PyTorch C++ 后端（TorchScript 模型推理，已预留接口） |
-| Python 3.12 + ultralytics | 用于将 PyTorch .pt 模型转换为 ONNX 格式 |
+| ONNX Runtime 1.17+ | 通用 ONNX 推理，跨平台性能好 |
+| LibTorch 2.0+ | PyTorch C++ 推理，支持 TorchScript 格式 |
+| OpenVINO 2024+ | Intel 硬件优化推理（CPU/GPU/NPU） |
+| Python 3.12 + ultralytics | 用于转换模型格式 |
 
 ## 安装与构建
 
@@ -111,128 +129,152 @@ IndustryVisionGUI/  ──(编译)──▶  IndustryVisionKit  (可执行文件
 **macOS (Homebrew)：**
 
 ```bash
-# Qt6
-brew install qt
+brew install qt opencv cmake
 
-# OpenCV
-brew install opencv
-
-# ONNX Runtime — 从 GitHub Releases 下载预编译包
+# ONNX Runtime — 从 GitHub Releases 下载
 # https://github.com/microsoft/onnxruntime/releases
 # 下载 onnxruntime-osx-arm64-*.tgz，解压到项目根目录
+
+# LibTorch — 从 PyTorch 官网下载 C++ 发行版（CPU 版本）
+# https://pytorch.org/get-started/locally/
+# 下载 libtorch-macos-arm64-*.zip，解压到项目根目录
 ```
 
 **Ubuntu (apt)：**
 
 ```bash
 sudo apt install cmake qt6-base-dev libopencv-dev
-# ONNX Runtime 需从 GitHub 下载预编译包
-```
-
-**Windows (vcpkg)：**
-
-```bash
-vcpkg install qt6-base opencv4 onnxruntime
+# ONNX Runtime / LibTorch 需从官网下载预编译包
 ```
 
 ### 2. 准备模型文件
 
-模型文件体积较大，不包含在 Git 仓库中。请将 ONNX 模型放到 `resource/models/` 目录：
+模型文件不包含在 Git 仓库中，请将模型放到 `resource/models/` 目录：
 
 ```bash
-mkdir -p resource/models
-mkdir -p resource/images
-mkdir -p resource/classes
+mkdir -p resource/models resource/images resource/classes
 ```
 
-推荐模型（从 [Ultralytics](https://github.com/ultralytics/ultralytics) 获取）：
-
-| 模型 | 来源 | 默认类别文件 |
-|------|------|-------------|
-| yolov5s.onnx | YOLOv5 官方 | coco.names.txt |
-| yolov8n.onnx | YOLOv8 官方 | coco.names.txt |
-| yolo11n.onnx | YOLO11 官方 | coco.names.txt |
-| yolo26n.onnx | YOLO26 官方 | coco.names.txt |
-
-可用 Python + venv 一键导出 ONNX（推荐使用 uv 管理隔离环境，避免污染系统 Python）：
+可用 Python + venv 一键导出模型（推荐使用 uv 管理隔离环境）：
 
 ```bash
-# 安装 uv（Python 包管理器）
+# 安装 uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 在项目根目录创建虚拟环境（指定 Python 3.12，避免 3.14 兼容问题）
+# 创建虚拟环境
 uv venv .convert_venv --python 3.12
-
-# 激活虚拟环境
 source .convert_venv/bin/activate
-
-# 安装依赖
 uv pip install ultralytics onnx onnxslim
 
-# 导出 ONNX 模型（.pt 文件会自动从 Ultralytics 下载）
-yolo export model=yolov5s.pt format=onnx
+# 导出 ONNX 模型（OpenCV DNN / ONNX Runtime / OpenVINO 后端使用）
+yolo export model=yolov5su.pt format=onnx
 yolo export model=yolov8n.pt format=onnx
 yolo export model=yolo11n.pt format=onnx
 yolo export model=yolo26n.pt format=onnx
 
-# 导出的 .onnx 文件移动到 resource/models/
-mv *.onnx resource/models/
+# 导出 TorchScript 模型（LibTorch 后端使用）
+yolo export model=yolov5su.pt format=torchscript
+yolo export model=yolov8n.pt format=torchscript
+yolo export model=yolo11n.pt format=torchscript
+yolo export model=yolo26n.pt format=torchscript
 
-# 退出虚拟环境（环境保留在 .convert_venv/，下次可直接激活复用）
+# 移动到 resource/models/
+mv *.onnx *.torchscript resource/models/
+
 deactivate
 ```
 
-> **提示**：`.convert_venv/` 已在 `.gitignore` 中排除，不会提交到仓库。后续如需转换新模型，只需 `source .convert_venv/bin/activate` 即可复用。
-
-默认类别文件 `coco.names.txt`（80 类 COCO 数据集）已包含在 `resource/classes/` 中。自定义模型请创建对应的 `.txt` 类别文件。
+> `.convert_venv/` 已在 `.gitignore` 中排除。后续转换只需 `source .convert_venv/bin/activate` 复用。
 
 ### 3. 构建
 
+根据需要启用对应后端：
+
 ```bash
-# 配置（根据实际安装路径修改）
+# 仅 OpenCV DNN（零额外依赖，开箱即用）
+cmake -S . -B build
+cmake --build build -j$(nproc)
+
+# 启用 ONNX Runtime
 cmake -S . -B build \
-  -DCMAKE_PREFIX_PATH="/path/to/Qt6/lib/cmake;/path/to/onnxruntime" \
   -DINDUSTRYVISION_ENABLE_ONNXRUNTIME=ON \
   -DINDUSTRYVISION_ONNXRUNTIME_ROOT=/path/to/onnxruntime
 
-# 编译
-cmake --build build --config Release -j$(nproc)
+# 启用 LibTorch
+cmake -S . -B build \
+  -DINDUSTRYVISION_ENABLE_LIBTORCH=ON \
+  -DINDUSTRYVISION_LIBTORCH_ROOT=/path/to/libtorch \
+  -DCMAKE_PREFIX_PATH=/path/to/libtorch
+
+# 同时启用多个后端
+cmake -S . -B build \
+  -DINDUSTRYVISION_ENABLE_ONNXRUNTIME=ON \
+  -DINDUSTRYVISION_ONNXRUNTIME_ROOT=/path/to/onnxruntime \
+  -DINDUSTRYVISION_ENABLE_LIBTORCH=ON \
+  -DINDUSTRYVISION_LIBTORCH_ROOT=/path/to/libtorch \
+  -DCMAKE_PREFIX_PATH=/path/to/libtorch
+
+cmake --build build -j$(nproc)
 ```
 
-构建产物输出到 `bin/IndustryVisionKit`。
-
-**macOS 示例（Homebrew 安装）：**
+**macOS 完整示例（Homebrew + 全部后端）：**
 
 ```bash
 cmake -S . -B build \
-  -DCMAKE_PREFIX_PATH="$(brew --prefix qt)/lib/cmake;$(pwd)/onnxruntime-osx-arm64-1.24.4" \
   -DINDUSTRYVISION_ENABLE_ONNXRUNTIME=ON \
-  -DINDUSTRYVISION_ONNXRUNTIME_ROOT=$(pwd)/onnxruntime-osx-arm64-1.24.4
+  -DINDUSTRYVISION_ONNXRUNTIME_ROOT=$(pwd)/onnxruntime-osx-arm64-1.24.4 \
+  -DINDUSTRYVISION_ENABLE_LIBTORCH=ON \
+  -DINDUSTRYVISION_LIBTORCH_ROOT=$(pwd)/libtorch \
+  -DCMAKE_PREFIX_PATH=$(pwd)/libtorch
 
 cmake --build build -j$(sysctl -n hw.ncpu)
 ```
 
-### 4. 运行
+### 4. macOS 运行注意事项
+
+macOS 对第三方动态库有安全策略限制，LibTorch 的 dylib 可能被 Gatekeeper 拦截。如果遇到 `Library not loaded` 或 `code signature not valid` 错误，执行以下命令：
 
 ```bash
-# macOS 需设置库路径
-export DYLD_LIBRARY_PATH=/path/to/onnxruntime/lib:$DYLD_LIBRARY_PATH
+# 1. 移除隔离标记
+xattr -d com.apple.quarantine libtorch/lib/*.dylib
 
+# 2. 修正 libomp 绝对路径引用（LibTorch 编译时路径与本机不一致）
+install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib libtorch/lib/libtorch_cpu.dylib
+
+# 3. 对动态库和可执行文件做 ad-hoc 签名
+codesign --force --deep -s - libtorch/lib/*.dylib
+codesign --force --deep -s - bin/IndustryVisionKit
+```
+
+> 项目已在 CMake 中配置了 `BUILD_RPATH`，正常情况下无需手动设置 `DYLD_LIBRARY_PATH`。
+
+```bash
 ./bin/IndustryVisionKit
+```
+
+### 5. Linux / Windows 运行
+
+```bash
+# Linux — 需设置库路径
+export LD_LIBRARY_PATH=/path/to/onnxruntime/lib:/path/to/libtorch/lib:$LD_LIBRARY_PATH
+./bin/IndustryVisionKit
+
+# Windows — 将 DLL 放到可执行文件同目录，或添加到 PATH
+set PATH=C:\path\to\onnxruntime\lib;C:\path\to\libtorch\lib;%PATH%
+IndustryVisionKit.exe
 ```
 
 ## 使用说明
 
 1. **注册登录** — 首次使用先注册账号，用户信息保存在本地
-2. **选择模型** — 在左侧面板选择 YOLO 版本，系统自动匹配默认模型路径；也可手动浏览选择自定义模型
-3. **调整参数** — 置信度和 IOU 阈值实时生效，无需手动确认
-4. **选择输入源** — 支持图片/视频/摄像头模式；摄像头模式自动探测可用设备，支持刷新
-5. **开始检测** — 点击"开始"执行检测，右侧显示原图和标注结果
-6. **查看结果** — 下方表格显示检测详情，支持导出 CSV/TXT
+2. **选择推理后端** — 左侧面板下拉框切换，支持 OpenCV DNN / ONNX Runtime / LibTorch（取决于编译时启用了哪些）
+3. **选择模型** — 切换 YOLO 版本后自动匹配默认模型路径，也可手动浏览选择
+4. **调整参数** — 置信度和 IOU 阈值实时生效
+5. **选择输入源** — 图片/视频/摄像头模式，摄像头支持多设备探测与刷新
+6. **开始检测** — 右侧显示原图和标注结果，下方表格展示检测详情
+7. **导出结果** — 支持 CSV/TXT 格式导出
 
-## YOLO 版本输出格式说明
-
-不同 YOLO 版本的 ONNX 输出格式有差异，本项目已适配：
+## YOLO 版本输出格式
 
 | 版本 | 输出形状 | 说明 |
 |------|---------|------|
@@ -242,7 +284,8 @@ export DYLD_LIBRARY_PATH=/path/to/onnxruntime/lib:$DYLD_LIBRARY_PATH
 
 ## 后续扩展
 
-- [ ] LibTorch 后端支持（.pt / TorchScript 模型）
+- [x] ~~多推理后端支持（OpenCV DNN / ONNX Runtime / LibTorch）~~
+- [ ] OpenVINO 后端（已预留，需安装 OpenVINO SDK）
 - [ ] TensorRT 加速推理
 - [ ] 实例分割模型支持（YOLOv8-seg 等）
 - [ ] 多模型并发切换

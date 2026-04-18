@@ -8,7 +8,7 @@
 
 namespace IndustryVision {
 
-struct RuntimeState;
+class InferenceBackend;
 
 class YoloEngine final : public QObject {
     Q_OBJECT
@@ -18,6 +18,7 @@ public:
     ~YoloEngine() override;
 
     QStringList supportedVersions() const;
+    QStringList availableBackends() const;
     bool loadModel(const DetectionConfig& config, QString* message);
     void setThresholds(double confidenceThreshold, double iouThreshold);
 
@@ -35,7 +36,9 @@ private:
 
     DetectionConfig m_config;
     QStringList m_classNames;
-    std::unique_ptr<RuntimeState> m_runtimeState;
+    std::unique_ptr<InferenceBackend> m_backend;
+    int m_inputWidth = 640;
+    int m_inputHeight = 640;
     bool m_modelLoaded = false;
 };
 

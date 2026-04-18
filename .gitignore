@@ -5,6 +5,8 @@ bin/
 # ==================== 第三方大库（需自行下载） ====================
 libtorch/
 onnxruntime-*/
+openvino_runtime/
+openvino_*.tgz
 
 # ==================== 模型文件（体积过大） ====================
 resource/models/

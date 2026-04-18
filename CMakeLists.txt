@@ -9,6 +9,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(INDUSTRYVISION_ENABLE_ONNXRUNTIME "Enable ONNX Runtime backend for real YOLO inference" OFF)
 set(INDUSTRYVISION_ONNXRUNTIME_ROOT "" CACHE PATH "Path to ONNX Runtime installation root")
 
+option(INDUSTRYVISION_ENABLE_OPENVINO "Enable OpenVINO backend for YOLO inference" OFF)
+set(INDUSTRYVISION_OPENVINO_ROOT "" CACHE PATH "Path to OpenVINO installation root")
+
 option(INDUSTRYVISION_ENABLE_LIBTORCH "Enable LibTorch backend for PyTorch YOLO inference" OFF)
 set(INDUSTRYVISION_LIBTORCH_ROOT "" CACHE PATH "Path to LibTorch installation root")
 

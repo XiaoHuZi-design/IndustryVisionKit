@@ -74,6 +74,7 @@ private:
     QLineEdit* m_modelPathEdit = nullptr;
     QLineEdit* m_classFileEdit = nullptr;
     QComboBox* m_versionCombo = nullptr;
+    QComboBox* m_backendCombo = nullptr;
     QDoubleSpinBox* m_confidenceSpin = nullptr;
     QDoubleSpinBox* m_iouSpin = nullptr;
     QRadioButton* m_imageModeButton = nullptr;
