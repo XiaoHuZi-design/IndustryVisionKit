@@ -64,6 +64,24 @@ IndustryVisionKit/
 └── README.md
 ```
 
+## 编译架构
+
+项目采用**分层静态链接**架构，通过根 `CMakeLists.txt` 的 `add_subdirectory` 按依赖顺序一次性编译：
+
+```
+IndustryVisionLib/  ──(编译)──▶  libIndustryVisionLib.a  (静态库)
+                                          │
+                                          │ 静态链接
+                                          ▼
+IndustryVisionGUI/  ──(编译)──▶  IndustryVisionKit  (可执行文件)
+                                   + Qt6 / OpenCV / ONNX Runtime
+```
+
+- **`libIndustryVisionLib.a`** — 算法层静态库，包含 YOLO 推理引擎、用户管理等核心逻辑
+- **`IndustryVisionKit`** — 最终可执行文件，GUI 层编译时将静态库整体链入，运行时只需这一个文件
+
+编译顺序由 CMake 自动管理：先编译 Lib 产出 `.a`，再编译 GUI 链接它并生成最终可执行文件，一条 `cmake --build` 即可完成全部构建。
+
 ## 环境依赖
 
 ### 必需
