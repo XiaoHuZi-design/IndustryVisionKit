@@ -1,0 +1,6 @@
+ant
+bee
+cat
+dog
+hat
+person
