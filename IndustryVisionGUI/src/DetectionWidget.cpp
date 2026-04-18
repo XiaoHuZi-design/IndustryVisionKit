@@ -55,8 +55,8 @@ QString projectResourcePath(const QString& relativePath) {
 QString defaultModelForVersion(const QString& version, const QString& backend) {
     // LibTorch 后端使用 .torchscript 格式
     if (backend == QStringLiteral("LibTorch")) {
+        // yolov5su 输出 v8 格式 (1,84,8400)，和 YOLOv5 解析不兼容，所以不提供 YOLOv5 默认
         static const QHash<QString, QString> torchscriptDefaults = {
-            {QStringLiteral("YOLOv5"), QStringLiteral("resource/models/yolov5su.torchscript")},
             {QStringLiteral("YOLOv8"), QStringLiteral("resource/models/yolov8n.torchscript")},
             {QStringLiteral("YOLOv11"), QStringLiteral("resource/models/yolo11n.torchscript")},
             {QStringLiteral("YOLOv26"), QStringLiteral("resource/models/yolo26n.torchscript")},
